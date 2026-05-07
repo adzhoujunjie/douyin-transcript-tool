@@ -1,6 +1,10 @@
 node_modules/
 .env
+douyin-cookies.txt
+cookies.txt
+*.cookies.txt
 uploads/
+downloads/
 tmp/
 npm-debug.log*
 .DS_Store

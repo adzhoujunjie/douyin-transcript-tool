@@ -25,7 +25,7 @@
         <header class="hero">
           <span class="badge">MVP · Port 3001</span>
           <h1>抖音视频口播文案提取工具</h1>
-          <p>支持抖音长链、v.douyin.com 短链、完整分享口令文本、批量粘贴、文件读取链接，以及上传视频/音频兜底识别。</p>
+          <p>支持抖音长链、v.douyin.com 短链、完整分享口令文本、批量粘贴、文件读取链接、上传视频/音频兜底识别，以及手动粘贴字幕整理。 <a href="/diagnostics" target="_blank">查看诊断页</a></p>
         </header>
 
         <div class="grid two">
@@ -42,11 +42,11 @@
           <article class="card">
             <div class="card-head">
               <h2>上传视频/音频兜底</h2>
-              <p>当链接下载失败时，可上传 mp4 / mp3 / wav 直接转写。</p>
+              <p>当链接下载失败时，可上传 mp4 / mp3 / wav / m4a 直接转写。</p>
             </div>
             <label class="file-drop">
-              <input id="mediaFile" type="file" accept=".mp4,.mp3,.wav,video/mp4,audio/mpeg,audio/wav" />
-              <span>选择 mp4 / mp3 / wav 文件</span>
+              <input id="mediaFile" type="file" accept=".mp4,.mp3,.wav,.m4a,video/mp4,audio/mpeg,audio/wav,audio/mp4" />
+              <span>选择 mp4 / mp3 / wav / m4a 文件</span>
             </label>
             <button id="mediaButton">上传并识别</button>
             <div id="mediaResult" class="result-box muted">上传识别结果会显示在这里。</div>
@@ -76,6 +76,21 @@
             <input id="linkFile" type="file" accept=".txt,.csv,.xlsx,text/plain,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
             <span>选择 txt / csv / xlsx 文件</span>
           </label>
+        </article>
+
+
+        <article class="card">
+          <div class="card-head row">
+            <div>
+              <h2>手动粘贴字幕/口播文本整理</h2>
+              <p>粘贴抖音字幕、剪映识别字幕、第三方转写文本或人工粗稿；仅轻度纠错、去除明显重复语气词、补标点和断句，不总结、不改写、不改变原意。</p>
+            </div>
+            <button id="manualButton" class="secondary">整理文案</button>
+          </div>
+          <textarea id="manualInput" rows="7" placeholder="把字幕或口播粗稿粘贴到这里..."></textarea>
+          <textarea id="manualOutput" rows="7" readonly placeholder="整理后的口播文案会显示在这里。"></textarea>
+          <button id="manualCopyButton">一键复制</button>
+          <div id="manualResult" class="result-box muted">该功能只依赖 OPENAI_API_KEY / OPENAI_BASE_URL / OPENAI_MODEL，不依赖 ASR。</div>
         </article>
 
         <article class="card">

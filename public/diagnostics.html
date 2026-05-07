@@ -1,0 +1,5 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>环境诊断 - 抖音口播文案工具</title><link rel="stylesheet" href="/styles.css" /></head>
+  <body><main class="shell"><header class="hero"><span class="badge">Diagnostics</span><h1>环境诊断</h1><p>仅显示配置状态、域名和错误摘要，不展示 API Key、Cookie 内容。</p><a href="/">返回首页</a></header><article id="passwordBox" class="card hidden"><h2>请输入访问密码</h2><form id="diagnosticsPasswordForm" class="inline-form"><input id="diagnosticsPassword" type="password" placeholder="APP_PASSWORD" /><button type="submit">查看诊断</button></form><p id="diagnosticsPasswordError" class="error-text"></p></article><article class="card"><div class="card-head row"><div><h2>诊断结果</h2><p id="diagnosticsStatus">正在加载...</p></div><button id="reloadButton" class="secondary">刷新</button></div><div id="diagnosticsContent" class="diagnostics-grid"></div></article></main><script src="/diagnostics.js"></script></body>
+</html>
