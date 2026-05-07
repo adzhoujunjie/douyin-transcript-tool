@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>抖音视频口播文案提取工具</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section id="passwordPanel" class="password-panel hidden">
+        <div class="card auth-card">
+          <span class="badge">Private Tool</span>
+          <h1>请输入访问密码</h1>
+          <p>当前工具已开启访问保护，密码只会发送到后端校验，不会写入前端代码。</p>
+          <form id="passwordForm" class="inline-form">
+            <input id="passwordInput" type="password" placeholder="APP_PASSWORD" autocomplete="current-password" />
+            <button type="submit">进入工具</button>
+          </form>
+          <p id="passwordError" class="error-text"></p>
+        </div>
+      </section>
+
+      <section id="appPanel" class="hidden">
+        <header class="hero">
+          <span class="badge">MVP · Port 3001</span>
+          <h1>抖音视频口播文案提取工具</h1>
+          <p>支持抖音长链、v.douyin.com 短链、完整分享口令文本、批量粘贴、文件读取链接，以及上传视频/音频兜底识别。</p>
+        </header>
+
+        <div class="grid two">
+          <article class="card">
+            <div class="card-head">
+              <h2>单个链接识别</h2>
+              <p>可输入链接、短链或整段抖音分享文案。</p>
+            </div>
+            <textarea id="singleInput" rows="5" placeholder="9.23 ZzG:/ ... https://v.douyin.com/bDZ191tTDfg/ 复制此链接..."></textarea>
+            <button id="singleButton">提取口播文案</button>
+            <div id="singleResult" class="result-box muted">识别结果会显示在这里。</div>
+          </article>
+
+          <article class="card">
+            <div class="card-head">
+              <h2>上传视频/音频兜底</h2>
+              <p>当链接下载失败时，可上传 mp4 / mp3 / wav 直接转写。</p>
+            </div>
+            <label class="file-drop">
+              <input id="mediaFile" type="file" accept=".mp4,.mp3,.wav,video/mp4,audio/mpeg,audio/wav" />
+              <span>选择 mp4 / mp3 / wav 文件</span>
+            </label>
+            <button id="mediaButton">上传并识别</button>
+            <div id="mediaResult" class="result-box muted">上传识别结果会显示在这里。</div>
+          </article>
+        </div>
+
+        <article class="card">
+          <div class="card-head row">
+            <div>
+              <h2>批量链接识别</h2>
+              <p>每行一条，允许夹杂标题、话题、复制提示；单条失败不会影响其他链接。</p>
+            </div>
+            <button id="batchButton" class="secondary">批量提取</button>
+          </div>
+          <textarea id="batchInput" rows="8" placeholder="https://www.douyin.com/video/7634809294119041935&#10;标题 #话题 https://v.douyin.com/bDZ191tTDfg/ 复制此链接..."></textarea>
+        </article>
+
+        <article class="card">
+          <div class="card-head row">
+            <div>
+              <h2>上传 txt / csv / xlsx 读取链接</h2>
+              <p>文件中可包含纯链接或完整分享文案，系统会自动提取抖音链接。</p>
+            </div>
+            <button id="linkFileButton" class="secondary">上传文件并处理</button>
+          </div>
+          <label class="file-drop compact">
+            <input id="linkFile" type="file" accept=".txt,.csv,.xlsx,text/plain,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
+            <span>选择 txt / csv / xlsx 文件</span>
+          </label>
+        </article>
+
+        <article class="card">
+          <div class="card-head row">
+            <div>
+              <h2>处理结果</h2>
+              <p>成功结果可复制文案，全部结果可导出 UTF-8 BOM CSV。</p>
+            </div>
+            <button id="exportButton" class="secondary">导出 CSV</button>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>序号</th>
+                  <th>视频链接</th>
+                  <th>识别状态</th>
+                  <th>口播文案</th>
+                  <th>错误原因</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="resultBody">
+                <tr><td colspan="6" class="empty">暂无结果</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+    </main>
+    <script src="/app.js"></script>
+  </body>
+</html>
