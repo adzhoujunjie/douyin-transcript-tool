@@ -1,3 +1,5 @@
+import { logStep } from './logger.js';
+
 const DOUYIN_URL_REGEX = /https?:\/\/(?:www\.)?(?:douyin\.com|v\.douyin\.com)\/[^\s，。；;、]+/gi;
 const VIDEO_ID_REGEXES = [
   /douyin\.com\/video\/(\d+)/i,
@@ -44,6 +46,7 @@ export async function resolveDouyinUrl(url) {
     const finalUrl = response.url || cleanUrl;
     return { originalUrl: cleanUrl, finalUrl, videoId: extractVideoId(finalUrl) };
   } catch (error) {
+    logStep('短链解析失败', 'fail', { errorType: 'short_link_resolve_failed', errorMessage: error.message, url: cleanUrl });
     throw new Error(`短链解析失败：${error.message}`);
   }
 }
