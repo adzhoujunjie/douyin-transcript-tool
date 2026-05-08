@@ -22,6 +22,14 @@ export const config = {
     cookiesFile: (process.env.DOUYIN_COOKIES_FILE || '').trim(),
     userAgent: process.env.DOUYIN_USER_AGENT || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36',
     referer: process.env.DOUYIN_REFERER || 'https://www.douyin.com/',
-    retries: Number(process.env.DOUYIN_YTDLP_RETRIES || 3)
+    retries: Number(process.env.DOUYIN_YTDLP_RETRIES || 3),
+    resolver: {
+      provider: (process.env.DOUYIN_RESOLVER_PROVIDER || '').trim().toLowerCase(),
+      apiUrl: (process.env.DOUYIN_RESOLVER_API_URL || '').trim(),
+      apiKey: process.env.DOUYIN_RESOLVER_API_KEY || '',
+      method: (process.env.DOUYIN_RESOLVER_METHOD || 'POST').trim().toUpperCase(),
+      urlField: (process.env.DOUYIN_RESOLVER_URL_FIELD || 'url').trim() || 'url',
+      responseVideoField: (process.env.DOUYIN_RESOLVER_RESPONSE_VIDEO_FIELD || '').trim()
+    }
   }
 };

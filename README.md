@@ -1,171 +1,135 @@
 # 抖音视频口播文案提取工具
 
-用于从抖音链接或本地视频/音频中提取口播文案，并提供“手动粘贴字幕/口播文本整理”兜底能力。项目保留现有单条、批量、文件导入、结果表格、复制、CSV 导出和访问密码保护功能。
+部署端口默认 `3001`。本工具保留三条稳定使用路径：
 
-## 功能概览
+1. **直接粘抖音链接 / 短链 / 完整分享口令**：优先走第三方解析 API，失败后自动降级到 `yt-dlp + Cookie`，再尝试 Playwright 捕获视频资源。
+2. **上传视频/音频**：不依赖抖音链接，是当前最稳的兜底路径。
+3. **手动粘贴字幕/口播文本整理**：不依赖 ASR，适合已有字幕文本或人工粗稿。
 
-- 单个抖音链接识别：支持 `www.douyin.com` 长链、`v.douyin.com` 短链、完整分享口令文本自动提取链接。
-- 批量链接识别：每行一条链接或分享口令，单条失败不影响其他链接。
-- 上传链接文件：支持 `txt` / `csv` / `xlsx`，其中 `xlsx` 会从所有工作表、所有单元格提取抖音链接或分享口令。
-- 上传视频/音频兜底识别：支持 `mp4` / `mp3` / `wav` / `m4a`，最大上传大小由后端限制为 600MB；实际 ASR 服务可能有更低限制，文件过大时请压缩或截短。
-- 手动粘贴字幕/口播文本整理：只依赖 `OPENAI_API_KEY` / `OPENAI_BASE_URL` / `OPENAI_MODEL`，不依赖视频下载和 ASR；仅轻度纠错、断句、补标点，不总结、不改写成广告文案、不改变原意。
-- 诊断页：访问 `/diagnostics` 查看 ffmpeg、yt-dlp、Cookie、ASR、OpenAI 和目录可写性状态；不会展示 API Key、Cookie 内容；配置 `APP_PASSWORD` 后同样受密码保护。
-- 导出 CSV：继续使用 UTF-8 BOM，避免 Excel 打开中文乱码。暂未新增 Excel xlsx 导出，建议先使用 CSV。
+后端流程是：解析抖音链接 → 下载视频到 `tmp/downloads` → 复用上传识别链路提取音频 → 调用 OpenAI 兼容 ASR → 调用文本模型做轻度纠错和断句。文本整理要求是忠于原视频口播，不总结、不扩写、不改写广告文案。
 
-## 环境要求
-
-- Node.js 18+
-- npm
-- ffmpeg：用于从视频中提取音频
-- yt-dlp：用于尝试下载抖音视频
-
-### Ubuntu / 阿里云安装系统依赖
-
-```bash
-apt update
-apt install -y ffmpeg python3-pip
-python3 -m pip install -U yt-dlp
-```
-
-如果服务器限制系统级 pip，可使用：
-
-```bash
-apt install -y pipx
-pipx install yt-dlp
-pipx ensurepath
-```
-
-## 本地运行
-
-```bash
-npm install
-cp .env.example .env
-npm start
-```
-
-打开：
-
-```text
-http://localhost:3001
-```
-
-开发模式：
-
-```bash
-npm run dev
-```
-
-## .env 示例说明
-
-请复制 `.env.example` 到 `.env`，不要提交 `.env`。
+## 环境变量
 
 ```env
 PORT=3001
-APP_PASSWORD=
-OPENAI_API_KEY=
-OPENAI_BASE_URL=
-OPENAI_MODEL=
-ASR_PROVIDER=openai-compatible
-ASR_API_KEY=
-ASR_BASE_URL=
-ASR_MODEL=
-DOUYIN_COOKIES_FILE=/root/douyin-cookies.txt
-```
+APP_PASSWORD=your-password
 
-配置说明：
+OPENAI_API_KEY=sk-xxxx
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_MODEL=gpt-4o-mini
 
-- `PORT`：服务端口，默认 `3001`。
-- `APP_PASSWORD`：访问密码。为空时不启用访问保护；存在时页面和 API 都需要密码。
-- `OPENAI_API_KEY` / `OPENAI_BASE_URL` / `OPENAI_MODEL`：用于文本模型纠错和“手动粘贴字幕/口播文本整理”。
-- `ASR_PROVIDER`：支持 `openai-compatible` 和 `disabled`。
-- `ASR_API_KEY` / `ASR_BASE_URL` / `ASR_MODEL`：用于 OpenAI 兼容音频转写接口，优先调用 `/audio/transcriptions`。如果 `ASR_API_KEY` 或 `ASR_BASE_URL` 为空，会复用对应的 `OPENAI_API_KEY` / `OPENAI_BASE_URL`。
-- `DOUYIN_COOKIES_FILE`：可选。配置后且文件真实存在时，yt-dlp 下载抖音视频会自动附加 `--cookies <文件路径>`；文件不存在时继续按无 Cookie 逻辑尝试下载，不会直接崩溃。
-
-## 抖音 Cookie 配置
-
-当链接下载失败并提示 `Fresh cookies are needed`、`需要登录` 或 Cookie 相关错误时，需要在服务器配置 Cookie：
-
-1. 建议使用专门的小号登录抖音网页后导出 `cookies.txt`。
-2. Cookie 文件不要提交到 GitHub。
-3. Cookie 文件不要截图、不要公开、不要发到群聊或工单。
-4. 服务器路径建议放在 `/root/douyin-cookies.txt`。
-5. `.env` 中配置：
-
-```env
-DOUYIN_COOKIES_FILE=/root/douyin-cookies.txt
-```
-
-配置完成后重启 PM2。若 Cookie 文件存在，后端调用 yt-dlp 时会带上 `--cookies /root/douyin-cookies.txt`。
-
-## ASR 语音识别配置
-
-### openai-compatible
-
-```env
 ASR_PROVIDER=openai-compatible
 ASR_API_KEY=sk-xxxx
 ASR_BASE_URL=https://api.openai.com/v1
-ASR_MODEL=whisper-1
+ASR_MODEL=gpt-4o-mini-transcribe
+
+DOUYIN_COOKIES_FILE=/root/douyin-cookies.txt
+DOUYIN_USER_AGENT=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36
+DOUYIN_REFERER=https://www.douyin.com/
+DOUYIN_YTDLP_RETRIES=3
+
+DOUYIN_RESOLVER_PROVIDER=api
+DOUYIN_RESOLVER_API_URL=https://your-parser-api.com/parse
+DOUYIN_RESOLVER_API_KEY=你的解析接口key
+DOUYIN_RESOLVER_METHOD=POST
+DOUYIN_RESOLVER_URL_FIELD=url
+DOUYIN_RESOLVER_RESPONSE_VIDEO_FIELD=data.play_url
 ```
 
-该模式会调用 OpenAI 兼容的 `/audio/transcriptions` 接口。若接口不支持音频转写，会返回明确中文提示，例如“当前 ASR_MODEL 可能不支持音频转写”或“ASR_BASE_URL 可能不是音频转写接口”。
+说明：
 
-### disabled
+- `APP_PASSWORD`：可选。配置后页面和 API 都需要密码。
+- `OPENAI_*`：用于文本模型轻度纠错、断句，以及手动粘贴字幕整理。
+- `ASR_PROVIDER`：支持 `openai-compatible` 和 `disabled`。
+- `ASR_API_KEY` / `ASR_BASE_URL` / `ASR_MODEL`：用于 OpenAI 兼容 `/audio/transcriptions` 接口。未单独配置时会默认复用 `OPENAI_*`。
+- `DOUYIN_COOKIES_FILE`：yt-dlp 备用通道使用。Cookie 文件不要提交、不要截图、不要公开。
+- `DOUYIN_RESOLVER_*`：第三方抖音解析 API 通道使用。不要把解析 API Key 写进代码，不要提交 `.env`。
 
-```env
-ASR_PROVIDER=disabled
-```
+## 方式一：直接粘抖音链接（推荐配置第三方解析 API）
 
-上传视频/音频功能仍会提取音频，但不会调用 ASR，页面会提示：
-
-```text
-当前未启用 ASR 语音识别，请配置可用的 ASR_PROVIDER / ASR_MODEL，或使用手动粘贴字幕整理功能。
-```
-
-## 如何使用
-
-### 单条链接
-
-在“单个链接识别”输入框中粘贴任意一种内容：
+输入框支持以下任意内容：
 
 ```text
 https://www.douyin.com/video/7634809294119041935
 ```
 
 ```text
-https://v.douyin.com/bDZ191tTDfg/
+https://v.douyin.com/xxxx/
 ```
 
 ```text
-9.23 ZzG:/ q@e.BT 05/20 标题 #话题 https://v.douyin.com/bDZ191tTDfg/ 复制此链接，打开抖音搜索，直接观看视频！
+4.64 01/22 dAg:/ E@h.bN 今天来学# 夏天的风... https://v.douyin.com/xxxx/ 复制此链接，打开Dou音搜索，直接观看视频！
 ```
 
-### 批量粘贴
+### 多通道解析顺序
 
-在“批量链接识别”文本框中每行粘贴一条链接或一段分享文案，点击“批量提取”。
+1. **通道 A：第三方抖音解析 API（优先）**
+   - 当 `DOUYIN_RESOLVER_PROVIDER=api` 且 `DOUYIN_RESOLVER_API_URL` 已配置时启用。
+   - 支持 `GET` / `POST`。
+   - 默认用 `url` 字段传抖音链接，可通过 `DOUYIN_RESOLVER_URL_FIELD` 修改。
+   - 配置 `DOUYIN_RESOLVER_API_KEY` 后，会以 `Authorization: Bearer <key>` 和 `x-api-key: <key>` 发送给解析服务。
+   - 如果配置 `DOUYIN_RESOLVER_RESPONSE_VIDEO_FIELD=data.play_url`，会按该字段读取视频直链。
+   - 未配置返回字段时，会自动尝试：`video_url`、`videoUrl`、`play_url`、`playUrl`、`download_url`、`downloadUrl`、`url`、`data.video_url`、`data.play_url`、`data.url`。
+2. **通道 B：yt-dlp + DOUYIN_COOKIES_FILE（备用）**
+   - 如果 Cookie 文件存在，会自动附加 `--cookies /root/douyin-cookies.txt`。
+   - 同时会带 user-agent 和 referer。
+   - 如果仍遇到 `Fresh cookies are needed`，前端会显示中文提示，不会裸露英文报错。
+3. **通道 C：Playwright + Chromium（实验兜底）**
+   - 打开最终抖音页面。
+   - 监听 network 请求、读取页面标题/文本、尝试提取 `video` 标签 `src`。
+   - 如果捕获到视频资源 URL，会下载后进入 ASR；否则只写入诊断信息，不让页面崩溃。
+4. **通道 D：明确失败提示**
+   - 如果全部失败，页面提示：`当前链接无法由服务器直接解析，可能是抖音风控或解析接口未配置。请配置第三方解析 API，或下载视频后上传识别。`
 
-### 上传 txt / csv / xlsx
+## 方式二：上传视频/音频（当前最稳）
 
-在“上传 txt / csv / xlsx 读取链接”区域选择文件并点击“上传文件并处理”。文件内容可以是纯链接，也可以夹杂中文、话题、复制提示。
+支持：
 
-### 上传视频/音频兜底识别
+- `mp4`
+- `mp3`
+- `wav`
+- `m4a`
 
-当链接解析、下载或访问失败时，可上传 `mp4` / `mp3` / `wav` / `m4a`。后端上传大小限制为 600MB；若 ASR 服务报文件过大，请上传更短视频或先压缩音频。
+上传后会自动提取音频并调用 ASR，输出可复制口播文案。该路径不依赖抖音链接，也不依赖第三方解析 API 或 Cookie。
 
-### 手动粘贴字幕/口播文本整理
+## 方式三：手动粘贴字幕整理
 
-粘贴抖音字幕、剪映识别字幕、第三方转写文本或人工粗稿，点击“整理文案”。该功能不会总结、不改写成广告文案、不改变原意，只修正明显错别字、语气词重复、标点和断句，并保留原口播语气。输出结果支持“一键复制”。
+粘贴抖音字幕、剪映识别字幕、第三方转写文本或人工粗稿，点击“整理文案”。该功能只依赖 `OPENAI_API_KEY` / `OPENAI_BASE_URL` / `OPENAI_MODEL`，不依赖 ASR 和抖音解析。
 
-## 服务器部署
+## 批量处理和导出
 
-以下示例假设部署目录为 `/root/douyin-transcript-tool`。
+- 支持单条链接识别。
+- 支持批量粘贴多个链接或完整分享口令。
+- 支持上传 `txt` / `csv` / `xlsx` 自动读取链接。
+- 单条失败不会影响其他条。
+- 每条结果包含：视频链接、解析通道（`api` / `yt-dlp` / `playwright` / `failed` / `upload`）、识别状态、口播文案、错误原因。
+- 支持一键复制单条口播文案。
+- 支持导出 UTF-8 BOM CSV。
+
+## 服务器依赖
+
+```bash
+npm install
+python3 -m pip install -U yt-dlp
+apt install -y ffmpeg
+npx playwright install chromium
+```
+
+Playwright 是实验兜底通道依赖；服务器需要安装 Playwright Chromium，否则 `/diagnostics` 会提示 Chromium 不可用，但 API 和 yt-dlp 通道仍可继续尝试。
+
+## 服务器更新命令
+
+以下示例假设部署目录为 `/root/douyin-transcript-tool`：
 
 ```bash
 cd /root/douyin-transcript-tool
 git pull
 npm install
-pm2 restart douyin-transcript
+pm2 restart douyin-transcript --update-env
+pm2 save
 ```
+
+如果 `git pull` 失败，可以继续使用 zip 覆盖更新方案：先在本地下载最新代码 zip，上传服务器后覆盖项目目录，再执行 `npm install` 和 PM2 重启命令。覆盖前请备份服务器 `.env`、Cookie 文件和用户上传目录；不要把 `.env` 或 Cookie 放进代码仓库。
 
 ### 首次启动
 
@@ -180,13 +144,12 @@ pm2 save
 pm2 logs douyin-transcript
 ```
 
-重启：
+PM2 重启：
 
 ```bash
-pm2 restart douyin-transcript
+pm2 restart douyin-transcript --update-env
+pm2 save
 ```
-
-如果 3001 访问不了，请检查 PM2 状态、服务器防火墙、阿里云安全组是否放行 TCP 3001，或检查 Nginx 反向代理配置。
 
 ## 诊断与日志
 
@@ -196,22 +159,46 @@ pm2 restart douyin-transcript
 http://你的服务器:3001/diagnostics
 ```
 
-诊断内容包括服务状态、端口、ffmpeg、yt-dlp、yt-dlp 版本、Cookie 文件配置/存在性、ASR/OPENAI 配置域名、模型、目录可写性、最近一次链接下载错误摘要和最近一次 ASR 错误摘要。
+诊断页会显示：
 
-后端关键步骤会写入 PM2 logs，包括：提取链接、短链解析、yt-dlp 下载、ffmpeg 音频提取、ASR 转写、文本纠错、CSV 导出相关前端日志，以及错误的 `errorType` / `errorMessage`。日志不会打印 API Key、Cookie 内容或完整敏感路径。
+- 当前解析通道配置：`DOUYIN_RESOLVER_PROVIDER`、`DOUYIN_RESOLVER_API_URL` 是否配置（只显示域名）、`DOUYIN_RESOLVER_METHOD`。
+- yt-dlp 是否安装和版本。
+- ffmpeg 是否安装和路径。
+- Playwright 是否安装。
+- Chromium 是否可用。
+- `DOUYIN_COOKIES_FILE` 是否配置和文件是否存在。
+- 最近一次链接解析：输入摘要、提取链接、短链最终链接、API/yt-dlp/Playwright 是否成功、最终失败原因。
+- 最近一次 ASR 错误摘要。
 
-## 常见问题
+诊断页和 PM2 日志不会展示 API Key，不会展示 Cookie 内容。
 
-- `Fresh cookies are needed`：抖音需要登录 Cookie，请配置 `DOUYIN_COOKIES_FILE=/root/douyin-cookies.txt`。
-- ASR 上游负载饱和：ASR 服务繁忙或模型不稳定，请稍后重试，或更换 `ASR_MODEL` / `ASR_BASE_URL`。
-- ASR 模型不支持：当前模型可能不支持音频转写，请更换支持 `/audio/transcriptions` 的模型。
-- 鉴权失败：`ASR_API_KEY` 无效或没有权限。
-- 接口不存在：`ASR_BASE_URL` 可能不是 OpenAI 兼容音频转写接口。
-- 文件过大：请上传更短的视频或先压缩音频。
-- 超时：语音识别超时，请稍后重试或上传更短文件。
-- yt-dlp 找不到：安装 yt-dlp：`python3 -m pip install -U yt-dlp`。
-- ffmpeg 找不到：安装 ffmpeg：`apt install -y ffmpeg`。
-- 3001 访问不了：检查 PM2、服务器防火墙和阿里云安全组。
+## 如何测试完整链路
+
+1. 配置 `.env` 中的 `ASR_*` 和 `OPENAI_*`。
+2. 如需直接粘链接，配置第三方解析 API：
+
+   ```env
+   DOUYIN_RESOLVER_PROVIDER=api
+   DOUYIN_RESOLVER_API_URL=https://your-parser-api.com/parse
+   DOUYIN_RESOLVER_API_KEY=你的解析接口key
+   DOUYIN_RESOLVER_METHOD=POST
+   DOUYIN_RESOLVER_URL_FIELD=url
+   DOUYIN_RESOLVER_RESPONSE_VIDEO_FIELD=data.play_url
+   ```
+
+3. 安装依赖并重启：
+
+   ```bash
+   npm install
+   npx playwright install chromium
+   pm2 restart douyin-transcript --update-env
+   ```
+
+4. 打开首页，粘贴标准抖音链接、短链或完整分享口令，点击“提取口播文案”。
+5. 确认结果区显示解析通道、识别状态和口播文案。
+6. 上传一个 `mp4` 或 `mp3`，确认上传识别仍可用。
+7. 粘贴已有字幕文本，确认手动整理仍可用。
+8. 打开 `/diagnostics`，确认最近一次链接解析链路和最近一次 ASR 错误摘要正常显示且不泄露密钥。
 
 ## API 概览
 

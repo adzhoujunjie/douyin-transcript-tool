@@ -16,6 +16,7 @@ const upload = multer({ dest: 'uploads/', limits: { fileSize: 600 * 1024 * 1024 
 await fs.mkdir('uploads', { recursive: true });
 await fs.mkdir('downloads', { recursive: true });
 await fs.mkdir('tmp', { recursive: true });
+await fs.mkdir('tmp/downloads', { recursive: true });
 
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true }));
