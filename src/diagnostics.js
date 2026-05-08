@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { config } from './config.js';
-import { commandExists, runCommand } from './media.js';
+import { commandExists, inspectFfmpeg, inspectFfprobe } from './media.js';
 import { runtimeState } from './runtime-state.js';
 
 const require = createRequire(import.meta.url);
@@ -40,10 +40,10 @@ async function playwrightStatus() {
 }
 
 export async function getDiagnostics() {
-  const [ffmpeg, ytdlp, ffmpegPath, cookiesFileExists, uploadsWritable, downloadsWritable, tmpWritable, playwright] = await Promise.all([
-    commandExists('ffmpeg'),
+  const [ffmpeg, ffprobe, ytdlp, cookiesFileExists, uploadsWritable, downloadsWritable, tmpWritable, playwright] = await Promise.all([
+    inspectFfmpeg(),
+    inspectFfprobe(),
     commandExists('yt-dlp'),
-    runCommand('which', ['ffmpeg'], { timeoutMs: 8000 }),
     fileExists(config.douyin.cookiesFile),
     writableDir('uploads'),
     writableDir('downloads'),
@@ -52,11 +52,31 @@ export async function getDiagnostics() {
   ]);
 
   return {
-    service: { ok: true, timestamp: new Date().toISOString(), port: config.port },
+    ok: true,
+    node: process.version,
+    cwd: process.cwd(),
+    timestamp: new Date().toISOString(),
+    port: config.port,
+    env: {
+      ASR_PROVIDER: process.env.ASR_PROVIDER || config.asr.provider || '',
+      OPENAI_MODEL: process.env.OPENAI_MODEL || config.openai.model || '',
+      FFMPEG_PATH: process.env.FFMPEG_PATH || '',
+      FFPROBE_PATH: process.env.FFPROBE_PATH || ''
+    },
+    binaries: {
+      ffmpeg: { ok: ffmpeg.ok, path: ffmpeg.path, version: ffmpeg.version, rawSummary: ffmpeg.rawSummary },
+      ffprobe: { ok: ffprobe.ok, path: ffprobe.path, version: ffprobe.version, rawSummary: ffprobe.rawSummary },
+      ytDlp: { ok: ytdlp.ok, path: ytdlp.path, version: ytdlp.version, rawSummary: ytdlp.rawSummary }
+    },
+    service: { ok: true, timestamp: new Date().toISOString(), port: config.port, node: process.version, cwd: process.cwd() },
     dependencies: {
-      ffmpegInstalled: ffmpeg.installed,
-      ffmpegPath: ffmpegPath.exitCode === 0 ? ffmpegPath.stdout.trim() : '',
-      ytDlpInstalled: ytdlp.installed,
+      ffmpegInstalled: ffmpeg.ok,
+      ffmpegPath: ffmpeg.path,
+      ffmpegVersion: ffmpeg.version,
+      ffprobeInstalled: ffprobe.ok,
+      ffprobePath: ffprobe.path,
+      ffprobeVersion: ffprobe.version,
+      ytDlpInstalled: ytdlp.ok,
       ytDlpVersion: ytdlp.version,
       playwrightInstalled: playwright.installed,
       chromiumUsable: playwright.chromiumUsable,

@@ -13,6 +13,19 @@ import { logStep } from './logger.js';
 const app = express();
 const upload = multer({ dest: 'uploads/', limits: { fileSize: 600 * 1024 * 1024 } });
 
+function errorPayload(error, fallbackType) {
+  return {
+    ok: false,
+    error: error.errorMessage || error.message || '请求失败',
+    stage: error.stage || 'request',
+    channel: error.channel || 'server',
+    errorType: error.errorType || fallbackType,
+    errorMessage: error.errorMessage || error.message || '请求失败',
+    diagnostics: error.diagnostics || null,
+    errors: error.errors || error.diagnostics?.errors || []
+  };
+}
+
 await fs.mkdir('uploads', { recursive: true });
 await fs.mkdir('downloads', { recursive: true });
 await fs.mkdir('tmp', { recursive: true });
@@ -26,8 +39,9 @@ app.get('/diagnostics', (_req, res) => res.sendFile(path.resolve('public/diagnos
 app.get('/api/auth/status', authStatus);
 app.post('/api/auth/login', login);
 
-app.get('/api/diagnostics', requirePassword, async (_req, res) => {
-  res.json({ ok: true, diagnostics: await getDiagnostics() });
+app.get('/api/diagnostics', async (_req, res) => {
+  const diagnostics = await getDiagnostics();
+  res.json({ ...diagnostics, diagnostics });
 });
 
 app.post('/api/transcribe/single', requirePassword, async (req, res) => {
@@ -36,7 +50,7 @@ app.post('/api/transcribe/single', requirePassword, async (req, res) => {
     res.json({ ok: result.status === '成功', result });
   } catch (error) {
     logStep('单条识别失败', 'fail', { errorType: 'single_transcribe_failed', errorMessage: error.message });
-    res.status(400).json({ ok: false, error: error.message });
+    res.status(400).json(errorPayload(error, 'single_transcribe_failed'));
   }
 });
 
@@ -51,7 +65,7 @@ app.post('/api/transcript/polish', requirePassword, async (req, res) => {
     res.json({ ok: true, transcript });
   } catch (error) {
     logStep('文本纠错失败', 'fail', { errorType: 'manual_polish_failed', errorMessage: error.message });
-    res.status(400).json({ ok: false, error: error.message });
+    res.status(400).json(errorPayload(error, 'manual_polish_failed'));
   }
 });
 
@@ -65,7 +79,7 @@ app.post('/api/upload/links', requirePassword, upload.single('file'), async (req
     res.json({ ok: true, links, results });
   } catch (error) {
     logStep('上传链接文件失败', 'fail', { errorType: 'link_file_upload_failed', errorMessage: error.message });
-    res.status(400).json({ ok: false, error: error.message });
+    res.status(400).json(errorPayload(error, 'link_file_upload_failed'));
   } finally {
     await safeUnlink(req.file?.path);
   }
@@ -80,7 +94,7 @@ app.post('/api/upload/media', requirePassword, upload.single('file'), async (req
   } catch (error) {
     await safeUnlink(req.file?.path);
     logStep('上传媒体失败', 'fail', { errorType: 'media_upload_failed', errorMessage: error.message });
-    res.status(400).json({ ok: false, error: error.message });
+    res.status(400).json(errorPayload(error, 'media_upload_failed'));
   }
 });
 
@@ -94,9 +108,9 @@ app.post('/api/log/csv-export', requirePassword, (req, res) => {
 });
 
 app.use((err, _req, res, _next) => {
-  if (err instanceof multer.MulterError) return res.status(400).json({ ok: false, error: `上传失败：${err.message}` });
+  if (err instanceof multer.MulterError) return res.status(400).json({ ok: false, error: `上传失败：${err.message}`, stage: 'upload', channel: 'multer', errorType: 'upload_failed', errorMessage: `上传失败：${err.message}`, diagnostics: null, errors: [] });
   logStep('服务器错误', 'fail', { errorType: 'server_error', errorMessage: err.message || '服务器错误' });
-  res.status(500).json({ ok: false, error: err.message || '服务器错误' });
+  res.status(500).json(errorPayload(err, 'server_error'));
 });
 
 app.listen(config.port, () => {

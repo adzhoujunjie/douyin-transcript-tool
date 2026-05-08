@@ -7,6 +7,8 @@ const trimTrailingSlash = (value) => (value || '').trim().replace(/\/+$/, '');
 export const config = {
   port: Number(process.env.PORT || 3001),
   appPassword: process.env.APP_PASSWORD || '',
+  ffmpegPath: process.env.FFMPEG_PATH || '',
+  ffprobePath: process.env.FFPROBE_PATH || '',
   openai: {
     apiKey: process.env.OPENAI_API_KEY || '',
     baseUrl: trimTrailingSlash(process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1'),
