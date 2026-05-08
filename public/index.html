@@ -32,9 +32,9 @@
           <article class="card">
             <div class="card-head">
               <h2>单个链接识别</h2>
-              <p>可输入链接、短链或整段抖音分享文案。</p>
+              <p>可粘贴抖音链接、短链或完整分享口令；系统会优先尝试第三方解析 API，再依次尝试 yt-dlp 和 Playwright。</p>
             </div>
-            <textarea id="singleInput" rows="5" placeholder="9.23 ZzG:/ ... https://v.douyin.com/bDZ191tTDfg/ 复制此链接..."></textarea>
+            <textarea id="singleInput" rows="5" placeholder="可粘贴抖音链接、短链或完整分享口令"></textarea>
             <button id="singleButton">提取口播文案</button>
             <div id="singleResult" class="result-box muted">识别结果会显示在这里。</div>
           </article>
@@ -93,11 +93,24 @@
           <div id="manualResult" class="result-box muted">该功能只依赖 OPENAI_API_KEY / OPENAI_BASE_URL / OPENAI_MODEL，不依赖 ASR。</div>
         </article>
 
+        <article class="card notice-card">
+          <div class="card-head">
+            <h2>解析接口配置说明</h2>
+            <p>如果直接粘抖音链接失败，最稳定方案是配置第三方抖音解析 API。第三方接口负责把抖音链接解析成视频下载地址，本工具负责下载视频、提取音频、ASR 转文字、整理文案。不要把解析 API Key 写进代码，也不要提交 .env。</p>
+          </div>
+          <pre><code>DOUYIN_RESOLVER_PROVIDER=api
+DOUYIN_RESOLVER_API_URL=https://your-parser-api.com/parse
+DOUYIN_RESOLVER_API_KEY=你的解析接口key
+DOUYIN_RESOLVER_METHOD=POST
+DOUYIN_RESOLVER_URL_FIELD=url
+DOUYIN_RESOLVER_RESPONSE_VIDEO_FIELD=data.play_url</code></pre>
+        </article>
+
         <article class="card">
           <div class="card-head row">
             <div>
               <h2>处理结果</h2>
-              <p>成功结果可复制文案，全部结果可导出 UTF-8 BOM CSV。</p>
+              <p>结果会显示解析通道、识别状态、口播文案和错误原因；成功结果可复制文案，全部结果可导出 UTF-8 BOM CSV。</p>
             </div>
             <button id="exportButton" class="secondary">导出 CSV</button>
           </div>
@@ -107,6 +120,7 @@
                 <tr>
                   <th>序号</th>
                   <th>视频链接</th>
+                  <th>解析通道</th>
                   <th>识别状态</th>
                   <th>口播文案</th>
                   <th>错误原因</th>
@@ -114,7 +128,7 @@
                 </tr>
               </thead>
               <tbody id="resultBody">
-                <tr><td colspan="6" class="empty">暂无结果</td></tr>
+                <tr><td colspan="7" class="empty">暂无结果</td></tr>
               </tbody>
             </table>
           </div>

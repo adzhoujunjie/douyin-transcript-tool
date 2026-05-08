@@ -23,9 +23,9 @@ function setLoading(button, loading, text) {
 function escapeHtml(value = '') { return String(value).replace(/[&<>"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[char])); }
 function renderResults(results) {
   state.results = results;
-  if (!results.length) { resultBody.innerHTML = '<tr><td colspan="6" class="empty">暂无结果</td></tr>'; return; }
+  if (!results.length) { resultBody.innerHTML = '<tr><td colspan="7" class="empty">暂无结果</td></tr>'; return; }
   resultBody.innerHTML = results.map((item, index) => `
-    <tr><td>${index + 1}</td><td class="url-cell">${escapeHtml(item.videoLink || '')}</td><td class="${item.status === '成功' ? 'success' : 'fail'}">${escapeHtml(item.status || '')}</td><td class="transcript-cell">${escapeHtml(item.transcript || '')}</td><td class="fail">${escapeHtml(item.error || '')}</td><td>${item.status === '成功' ? `<button class="copy-btn" data-index="${index}">复制文案</button>` : ''}</td></tr>
+    <tr><td>${index + 1}</td><td class="url-cell">${escapeHtml(item.videoLink || '')}</td><td><span class="channel-badge">${escapeHtml(item.channel || 'failed')}</span></td><td class="${item.status === '成功' ? 'success' : 'fail'}">${escapeHtml(item.status || '')}</td><td class="transcript-cell">${escapeHtml(item.transcript || '')}</td><td class="fail">${escapeHtml(item.error || '')}</td><td>${item.transcript ? `<button class="copy-btn" data-index="${index}">复制文案</button>` : ''}</td></tr>
   `).join('');
 }
 function appendResult(result) { renderResults([result, ...state.results]); }
@@ -35,8 +35,8 @@ function exportCsv() {
   if (!state.results.length) return alert('暂无可导出的结果');
   console.log('[douyin-transcript] CSV 导出开始');
   fetch('/api/log/csv-export', { method: 'POST', headers: { 'content-type': 'application/json', ...authHeaders() }, body: JSON.stringify({ rowCount: state.results.length }) }).catch(() => {});
-  const header = ['序号', '视频链接', '识别状态', '口播文案', '错误原因'];
-  const rows = state.results.map((item, index) => [index + 1, item.videoLink, item.status, item.transcript, item.error]);
+  const header = ['序号', '视频链接', '解析通道', '识别状态', '口播文案', '错误原因'];
+  const rows = state.results.map((item, index) => [index + 1, item.videoLink, item.channel || 'failed', item.status, item.transcript, item.error]);
   const csv = [header, ...rows].map((row) => row.map(csvEscape).join(',')).join('\r\n');
   const now = new Date(); const pad = (num) => String(num).padStart(2, '0');
   const filename = `douyin-transcripts-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}.csv`;
@@ -65,8 +65,8 @@ $('passwordForm').addEventListener('submit', async (event) => {
 });
 
 $('singleButton').addEventListener('click', async () => {
-  const button = $('singleButton'); setLoading(button, true, '正在提取...'); $('singleResult').textContent = '正在解析链接、下载视频、提取音频并调用 ASR...';
-  try { const data = await requestJson('/api/transcribe/single', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: $('singleInput').value }) }); appendResult(data.result); $('singleResult').textContent = data.result.status === '成功' ? data.result.transcript : data.result.error; }
+  const button = $('singleButton'); setLoading(button, true, '正在提取...'); $('singleResult').textContent = '正在解析链接 → 下载视频 → 提取音频 → 识别口播...';
+  try { const data = await requestJson('/api/transcribe/single', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: $('singleInput').value }) }); appendResult(data.result); $('singleResult').textContent = data.result.status === '成功' ? `解析通道：${data.result.channel || 'unknown'}\n${data.result.transcript}` : `解析通道：${data.result.channel || 'failed'}\n${data.result.error}`; }
   catch (error) { $('singleResult').textContent = error.message; }
   finally { setLoading(button, false); }
 });

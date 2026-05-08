@@ -79,3 +79,5 @@ a { color: var(--brand); font-weight: 800; }
   .diagnostics-grid { grid-template-columns: 1fr; }
   .diag-key { border-bottom: 0; }
 }
+.notice-card pre { overflow-x: auto; padding: 14px; border-radius: 14px; background: #0f172a; color: #e2e8f0; line-height: 1.6; }
+.channel-badge { display: inline-flex; padding: 4px 8px; border-radius: 999px; background: #eef4ff; color: var(--brand); font-weight: 800; font-size: 12px; }

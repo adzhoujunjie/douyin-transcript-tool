@@ -1,8 +1,11 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { createRequire } from 'node:module';
 import { config } from './config.js';
-import { commandExists } from './media.js';
+import { commandExists, runCommand } from './media.js';
 import { runtimeState } from './runtime-state.js';
+
+const require = createRequire(import.meta.url);
 
 function configured(value) { return Boolean(String(value || '').trim()); }
 function safeDomain(url) {
@@ -18,24 +21,59 @@ async function writableDir(dir) {
   const test = path.join(dir, `.write-test-${process.pid}`);
   try { await fs.writeFile(test, 'ok'); await fs.unlink(test); return true; } catch { return false; }
 }
+async function playwrightStatus() {
+  try {
+    const { chromium } = require('playwright');
+    let chromiumUsable = false;
+    let chromiumError = '';
+    try {
+      const browser = await chromium.launch({ headless: true });
+      chromiumUsable = true;
+      await browser.close();
+    } catch (error) {
+      chromiumError = error.message || 'Chromium 启动失败';
+    }
+    return { installed: true, chromiumUsable, chromiumError };
+  } catch (error) {
+    return { installed: false, chromiumUsable: false, chromiumError: error.message || 'Playwright 未安装' };
+  }
+}
 
 export async function getDiagnostics() {
-  const [ffmpeg, ytdlp, cookiesFileExists, uploadsWritable, downloadsWritable, tmpWritable] = await Promise.all([
+  const [ffmpeg, ytdlp, ffmpegPath, cookiesFileExists, uploadsWritable, downloadsWritable, tmpWritable, playwright] = await Promise.all([
     commandExists('ffmpeg'),
     commandExists('yt-dlp'),
+    runCommand('which', ['ffmpeg'], { timeoutMs: 8000 }),
     fileExists(config.douyin.cookiesFile),
     writableDir('uploads'),
     writableDir('downloads'),
-    writableDir('tmp')
+    writableDir('tmp'),
+    playwrightStatus()
   ]);
 
   return {
     service: { ok: true, timestamp: new Date().toISOString(), port: config.port },
-    dependencies: { ffmpegInstalled: ffmpeg.installed, ytDlpInstalled: ytdlp.installed, ytDlpVersion: ytdlp.version },
+    dependencies: {
+      ffmpegInstalled: ffmpeg.installed,
+      ffmpegPath: ffmpegPath.exitCode === 0 ? ffmpegPath.stdout.trim() : '',
+      ytDlpInstalled: ytdlp.installed,
+      ytDlpVersion: ytdlp.version,
+      playwrightInstalled: playwright.installed,
+      chromiumUsable: playwright.chromiumUsable,
+      chromiumError: playwright.chromiumError
+    },
+    resolver: {
+      provider: config.douyin.resolver.provider || '未配置',
+      apiUrlConfigured: configured(config.douyin.resolver.apiUrl),
+      apiUrlDomain: safeDomain(config.douyin.resolver.apiUrl),
+      method: config.douyin.resolver.method,
+      urlField: config.douyin.resolver.urlField,
+      responseVideoFieldConfigured: configured(config.douyin.resolver.responseVideoField)
+    },
     douyin: { cookiesFileConfigured: configured(config.douyin.cookiesFile), cookiesFileExists },
     asr: { provider: config.asr.provider, baseUrlConfigured: configured(config.asr.baseUrl), baseUrlDomain: safeDomain(config.asr.baseUrl), model: config.asr.model || '' },
     openai: { baseUrlConfigured: configured(config.openai.baseUrl), baseUrlDomain: safeDomain(config.openai.baseUrl), model: config.openai.model || '' },
-    writable: { uploads: uploadsWritable, downloads: downloadsWritable, tmp: tmpWritable },
-    recentErrors: { lastDownloadError: runtimeState.lastDownloadError, lastAsrError: runtimeState.lastAsrError }
+    writable: { uploads: uploadsWritable, downloads: downloadsWritable, tmp: tmpWritable, tmpDownloads: await writableDir('tmp/downloads') },
+    recentErrors: { lastDownloadError: runtimeState.lastDownloadError, lastAsrError: runtimeState.lastAsrError, lastLinkResolve: runtimeState.lastLinkResolve }
   };
 }

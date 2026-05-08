@@ -1,41 +1,59 @@
 import { safeUnlink } from './file-utils.js';
-import { extractDouyinLinks, resolveDouyinUrl } from './link-utils.js';
-import { downloadVideo, extractAudio } from './media.js';
+import { extractDouyinLinks } from './link-utils.js';
+import { extractAudio } from './media.js';
+import { resolveDouyinVideo } from './douyin-resolver.js';
 import { lightlyCorrectTranscript, transcribeAudio } from './asr.js';
 import { logStep } from './logger.js';
+
+async function transcribeMediaFile(filePath) {
+  let audioPath = '';
+  let generatedAudio = false;
+  const audio = await extractAudio(filePath);
+  audioPath = audio.audioPath;
+  generatedAudio = audio.generated;
+  try {
+    const rawTranscript = await transcribeAudio(audioPath);
+    const transcript = await lightlyCorrectTranscript(rawTranscript);
+    return { transcript, audioPath, generatedAudio };
+  } catch (error) {
+    error.audioPath = audioPath;
+    error.generatedAudio = generatedAudio;
+    throw error;
+  }
+}
 
 export async function processInputText(text) {
   logStep('提取链接开始', 'start', { inputLength: String(text || '').length });
   const links = extractDouyinLinks(text);
-  if (!links.length) throw new Error('未识别到抖音链接');
-  return processDouyinLink(links[0]);
+  if (!links.length) throw new Error('未识别到抖音链接，请粘贴抖音链接、短链或完整分享口令。');
+  return processDouyinLink(text);
 }
 
-export async function processDouyinLink(link) {
+export async function processDouyinLink(inputText) {
   let videoPath = '';
   let audioPath = '';
   let generatedAudio = false;
+  let resolveResult;
 
   try {
-    logStep('提取链接开始', 'start', { url: link });
-    logStep('短链解析开始', 'start', { url: link });
-    const resolved = await resolveDouyinUrl(link);
-    logStep('短链解析成功', 'success', { isShortLink: resolved.originalUrl !== resolved.finalUrl, videoId: resolved.videoId || '', finalUrl: resolved.finalUrl });
-    if (!resolved.videoId && /douyin\.com/i.test(resolved.finalUrl) && !/\/video\//i.test(resolved.finalUrl)) {
-      throw new Error('视频页面无法访问：未能从链接中解析视频 ID，当前视频可能需要登录或不可访问。');
-    }
+    logStep('链接多通道处理开始', 'start', { inputLength: String(inputText || '').length });
+    resolveResult = await resolveDouyinVideo(inputText);
+    videoPath = resolveResult.filePath;
+    const result = await transcribeMediaFile(videoPath);
+    audioPath = result.audioPath;
+    generatedAudio = result.generatedAudio;
 
-    videoPath = await downloadVideo(resolved.finalUrl);
-    const audio = await extractAudio(videoPath);
-    audioPath = audio.audioPath;
-    generatedAudio = audio.generated;
-    const rawTranscript = await transcribeAudio(audioPath);
-    const transcript = await lightlyCorrectTranscript(rawTranscript);
-
-    return { videoLink: resolved.finalUrl, status: '成功', transcript, error: '' };
+    return {
+      videoLink: resolveResult.finalUrl || resolveResult.originalUrl || inputText,
+      channel: resolveResult.channel,
+      status: '成功',
+      transcript: result.transcript,
+      error: ''
+    };
   } catch (error) {
-    logStep('链接处理失败', 'fail', { errorType: error.errorType || 'process_link_failed', errorMessage: error.message || '处理失败', url: link });
-    return { videoLink: link, status: '失败', transcript: '', error: error.message || '处理失败' };
+    const channel = error.channel || resolveResult?.channel || 'failed';
+    logStep('链接处理失败', 'fail', { errorType: error.errorType || 'process_link_failed', errorMessage: error.message || '处理失败', channel, inputLength: String(inputText || '').length });
+    return { videoLink: resolveResult?.finalUrl || inputText, channel, status: '失败', transcript: '', error: error.message || '处理失败' };
   } finally {
     await safeUnlink(videoPath);
     if (generatedAudio) await safeUnlink(audioPath);
@@ -51,10 +69,11 @@ export async function processBatchText(text) {
   for (const input of inputs) {
     const links = extractDouyinLinks(input);
     if (!links.length) {
-      results.push({ videoLink: input, status: '失败', transcript: '', error: '未识别到抖音链接' });
+      results.push({ videoLink: input, channel: 'failed', status: '失败', transcript: '', error: '未识别到抖音链接，请粘贴抖音链接、短链或完整分享口令。' });
       continue;
     }
-    for (const link of links) results.push(await processDouyinLink(link));
+    if (links.length === 1) results.push(await processDouyinLink(input));
+    else for (const link of links) results.push(await processDouyinLink(link));
   }
 
   return results;
@@ -64,15 +83,15 @@ export async function processUploadedMedia(filePath) {
   let audioPath = '';
   let generatedAudio = false;
   try {
-    const audio = await extractAudio(filePath);
-    audioPath = audio.audioPath;
-    generatedAudio = audio.generated;
-    const rawTranscript = await transcribeAudio(audioPath);
-    const transcript = await lightlyCorrectTranscript(rawTranscript);
-    return { videoLink: '上传文件', status: '成功', transcript, error: '' };
+    const result = await transcribeMediaFile(filePath);
+    audioPath = result.audioPath;
+    generatedAudio = result.generatedAudio;
+    return { videoLink: '上传文件', channel: 'upload', status: '成功', transcript: result.transcript, error: '' };
   } catch (error) {
+    audioPath = error.audioPath || audioPath;
+    generatedAudio = error.generatedAudio || generatedAudio;
     logStep('上传媒体处理失败', 'fail', { errorType: error.errorType || 'uploaded_media_failed', errorMessage: error.message || '处理失败' });
-    return { videoLink: '上传文件', status: '失败', transcript: '', error: error.message || '处理失败' };
+    return { videoLink: '上传文件', channel: 'upload', status: '失败', transcript: '', error: error.message || '处理失败' };
   } finally {
     if (generatedAudio) await safeUnlink(audioPath);
     await safeUnlink(filePath);

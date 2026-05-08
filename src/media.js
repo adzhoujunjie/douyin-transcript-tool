@@ -7,13 +7,13 @@ import { config } from './config.js';
 import { logStep, summarizeError } from './logger.js';
 import { rememberDownloadError } from './runtime-state.js';
 
-const TMP_DIR = path.resolve('tmp');
+const TMP_DIR = path.resolve('tmp/downloads');
 
 export function classifyYtDlpError(message = '') {
   if (/Fresh cookies are needed|cookies|login|not logged in|需要登录|parse JSON failed/i.test(message)) {
     return {
       type: 'douyin_cookie_required',
-      userMessage: '抖音需要登录 Cookie，当前服务器无法直接下载该视频。请配置 DOUYIN_COOKIES_FILE=/root/douyin-cookies.txt，或改用上传视频/音频兜底识别。'
+      userMessage: '服务器直读抖音链接被拒绝，可能是抖音风控或 yt-dlp 解析失效。系统已尝试备用方案，如仍失败请改用上传视频识别，或配置第三方解析 API。'
     };
   }
   if (/ENOENT|not found|spawn yt-dlp/i.test(message)) {
