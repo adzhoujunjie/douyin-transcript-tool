@@ -30,6 +30,7 @@ export function rememberLinkResolve(resolveDiagnostics) {
     apiDetail: resolveDiagnostics.api?.detail || '',
     ytdlpDetail: resolveDiagnostics.ytdlp?.detail || '',
     playwrightDetail: resolveDiagnostics.playwright?.detail || '',
+    errors: resolveDiagnostics.errors || [],
     finalFailureReason: resolveDiagnostics.finalFailureReason || ''
   };
 }

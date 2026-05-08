@@ -10,7 +10,7 @@ function authHeaders() { return state.password ? { 'x-app-password': state.passw
 async function requestJson(url, options = {}) {
   const response = await fetch(url, { ...options, headers: { ...(options.headers || {}), ...authHeaders() } });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || '请求失败');
+  if (!response.ok) { const error = new Error(data.errorMessage || data.error || '请求失败'); error.payload = data; throw error; }
   return data;
 }
 
@@ -21,11 +21,34 @@ function setLoading(button, loading, text) {
   else if (button.dataset.originalText) button.textContent = button.dataset.originalText;
 }
 function escapeHtml(value = '') { return String(value).replace(/[&<>"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[char])); }
+
+function formatDiagnosticsSummary(item = {}) {
+  const parts = [];
+  if (item.stage) parts.push(`阶段：${item.stage}`);
+  if (item.channel) parts.push(`通道：${item.channel}`);
+  if (item.errorType) parts.push(`类型：${item.errorType}`);
+  const channelErrors = item.errors || item.diagnostics?.errors || [];
+  if (channelErrors.length) {
+    parts.push('解析链路失败详情：');
+    for (const err of channelErrors) parts.push(`- ${err.channel || 'unknown'}: ${err.errorType || 'failed'} - ${err.errorMessage || err.detail || ''}`);
+  }
+  return parts.join('\n');
+}
+
+function displayResultText(item = {}) {
+  if (item.status === '成功') return `解析通道：${item.channel || 'unknown'}\n${item.transcript || ''}`;
+  return [`解析通道：${item.channel || 'failed'}`, item.errorMessage || item.error || '处理失败', formatDiagnosticsSummary(item)].filter(Boolean).join('\n');
+}
+
+function errorMessageWithPayload(error) {
+  return [error.message, formatDiagnosticsSummary(error.payload || {})].filter(Boolean).join('\n');
+}
+
 function renderResults(results) {
   state.results = results;
   if (!results.length) { resultBody.innerHTML = '<tr><td colspan="7" class="empty">暂无结果</td></tr>'; return; }
   resultBody.innerHTML = results.map((item, index) => `
-    <tr><td>${index + 1}</td><td class="url-cell">${escapeHtml(item.videoLink || '')}</td><td><span class="channel-badge">${escapeHtml(item.channel || 'failed')}</span></td><td class="${item.status === '成功' ? 'success' : 'fail'}">${escapeHtml(item.status || '')}</td><td class="transcript-cell">${escapeHtml(item.transcript || '')}</td><td class="fail">${escapeHtml(item.error || '')}</td><td>${item.transcript ? `<button class="copy-btn" data-index="${index}">复制文案</button>` : ''}</td></tr>
+    <tr><td>${index + 1}</td><td class="url-cell">${escapeHtml(item.videoLink || '')}</td><td><span class="channel-badge">${escapeHtml(item.channel || 'failed')}</span></td><td class="${item.status === '成功' ? 'success' : 'fail'}">${escapeHtml(item.status || '')}</td><td class="transcript-cell">${escapeHtml(item.transcript || '')}</td><td class="fail">${escapeHtml([item.error || '', formatDiagnosticsSummary(item)].filter(Boolean).join('\n'))}</td><td>${item.transcript ? `<button class="copy-btn" data-index="${index}">复制文案</button>` : ''}</td></tr>
   `).join('');
 }
 function appendResult(result) { renderResults([result, ...state.results]); }
@@ -66,15 +89,15 @@ $('passwordForm').addEventListener('submit', async (event) => {
 
 $('singleButton').addEventListener('click', async () => {
   const button = $('singleButton'); setLoading(button, true, '正在提取...'); $('singleResult').textContent = '正在解析链接 → 下载视频 → 提取音频 → 识别口播...';
-  try { const data = await requestJson('/api/transcribe/single', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: $('singleInput').value }) }); appendResult(data.result); $('singleResult').textContent = data.result.status === '成功' ? `解析通道：${data.result.channel || 'unknown'}\n${data.result.transcript}` : `解析通道：${data.result.channel || 'failed'}\n${data.result.error}`; }
-  catch (error) { $('singleResult').textContent = error.message; }
+  try { const data = await requestJson('/api/transcribe/single', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: $('singleInput').value }) }); appendResult(data.result); $('singleResult').textContent = displayResultText(data.result); }
+  catch (error) { $('singleResult').textContent = errorMessageWithPayload(error); }
   finally { setLoading(button, false); }
 });
 
 $('batchButton').addEventListener('click', async () => {
   const button = $('batchButton'); setLoading(button, true, '批量处理中...');
   try { const data = await requestJson('/api/transcribe/batch', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: $('batchInput').value }) }); renderResults(data.results); }
-  catch (error) { alert(error.message); }
+  catch (error) { alert(errorMessageWithPayload(error)); }
   finally { setLoading(button, false); }
 });
 
@@ -82,7 +105,7 @@ $('linkFileButton').addEventListener('click', async () => {
   const file = $('linkFile').files[0]; if (!file) return alert('请先选择 txt / csv / xlsx 文件');
   const button = $('linkFileButton'); setLoading(button, true, '文件处理中...'); const formData = new FormData(); formData.append('file', file);
   try { const data = await requestJson('/api/upload/links', { method: 'POST', body: formData }); renderResults(data.results); }
-  catch (error) { alert(error.message); }
+  catch (error) { alert(errorMessageWithPayload(error)); }
   finally { setLoading(button, false); }
 });
 
@@ -91,8 +114,8 @@ $('mediaButton').addEventListener('click', async () => {
   try { validateMediaFile(file); } catch (error) { $('mediaResult').textContent = error.message; return; }
   const button = $('mediaButton'); setLoading(button, true, '上传识别中...'); $('mediaResult').textContent = '正在提取音频并调用 ASR...';
   const formData = new FormData(); formData.append('file', file);
-  try { const data = await requestJson('/api/upload/media', { method: 'POST', body: formData }); appendResult(data.result); $('mediaResult').textContent = data.result.status === '成功' ? data.result.transcript : data.result.error; }
-  catch (error) { $('mediaResult').textContent = error.message; }
+  try { const data = await requestJson('/api/upload/media', { method: 'POST', body: formData }); appendResult(data.result); $('mediaResult').textContent = data.result.status === '成功' ? data.result.transcript : displayResultText(data.result); }
+  catch (error) { $('mediaResult').textContent = errorMessageWithPayload(error); }
   finally { setLoading(button, false); }
 });
 
