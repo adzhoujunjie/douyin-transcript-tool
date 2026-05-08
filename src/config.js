@@ -18,6 +18,10 @@ export const config = {
     baseUrl: trimTrailingSlash(process.env.ASR_BASE_URL || process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1'),
     model: process.env.ASR_MODEL || process.env.OPENAI_MODEL || ''
   },
+  ffmpeg: {
+    path: process.env.FFMPEG_PATH || '/usr/bin/ffmpeg',
+    ffprobePath: process.env.FFPROBE_PATH || '/usr/bin/ffprobe'
+  },
   douyin: {
     cookiesFile: (process.env.DOUYIN_COOKIES_FILE || '').trim(),
     userAgent: process.env.DOUYIN_USER_AGENT || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36',

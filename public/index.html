@@ -25,14 +25,14 @@
         <header class="hero">
           <span class="badge">MVP · Port 3001</span>
           <h1>抖音视频口播文案提取工具</h1>
-          <p>支持抖音长链、v.douyin.com 短链、完整分享口令文本、批量粘贴、文件读取链接、上传视频/音频兜底识别，以及手动粘贴字幕整理。 <a href="/diagnostics" target="_blank">查看诊断页</a></p>
+          <p>支持抖音长链、v.douyin.com 短链、完整分享口令文本；单条链接主流程仅使用第三方解析 API 返回的 mp4 视频地址。 <a href="/diagnostics" target="_blank">查看诊断页</a></p>
         </header>
 
         <div class="grid two">
           <article class="card">
             <div class="card-head">
               <h2>单个链接识别</h2>
-              <p>可粘贴抖音链接、短链或完整分享口令；系统会优先尝试第三方解析 API，再依次尝试 yt-dlp 和 Playwright。</p>
+              <p>可粘贴抖音链接、短链或完整分享口令；系统仅调用第三方解析 API，成功返回 mp4 地址后下载并转写。</p>
             </div>
             <textarea id="singleInput" rows="5" placeholder="可粘贴抖音链接、短链或完整分享口令"></textarea>
             <button id="singleButton">提取口播文案</button>

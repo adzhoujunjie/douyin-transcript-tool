@@ -113,11 +113,18 @@ export async function extractAudio(inputPath) {
   }
 
   const audioPath = path.join(TMP_DIR, `${randomUUID()}.mp3`);
-  logStep('ffmpeg 音频提取开始', 'start', { inputExt: ext });
-  const result = await runCommand('ffmpeg', ['-y', '-i', inputPath, '-vn', '-acodec', 'libmp3lame', '-ar', '16000', '-ac', '1', audioPath]);
+  logStep('ffmpeg 音频提取开始', 'start', { inputExt: ext, ffmpegPath: config.ffmpeg.path });
+  const version = await runCommand(config.ffmpeg.path, ['-version'], { timeoutMs: 8000 });
+  if (version.exitCode !== 0) {
+    const message = `音频提取失败：ffmpeg 不可用（${config.ffmpeg.path} -version 未正常输出）。`;
+    logStep('ffmpeg 版本检查失败', 'fail', { errorType: 'ffmpeg_version_failed', errorMessage: message, rawSummary: version.stderr || version.stdout, exitCode: version.exitCode });
+    throw new Error(message);
+  }
+
+  const result = await runCommand(config.ffmpeg.path, ['-y', '-i', inputPath, '-vn', '-acodec', 'libmp3lame', '-ar', '16000', '-ac', '1', audioPath]);
   if (result.exitCode !== 0 || !fsSync.existsSync(audioPath)) {
-    const message = /ENOENT|not found|spawn ffmpeg/i.test(result.stderr) ? '音频提取失败：服务器未安装 ffmpeg。' : `音频提取失败：${summarizeError(result.stderr || `命令退出码 ${result.exitCode}`)}`;
-    logStep('ffmpeg 音频提取失败', 'fail', { errorType: 'ffmpeg_failed', errorMessage: message, rawSummary: result.stderr, exitCode: result.exitCode });
+    const message = `音频提取失败：${summarizeError(result.stderr || result.stdout || `命令退出码 ${result.exitCode}`)}`;
+    logStep('ffmpeg 音频提取失败', 'fail', { errorType: 'ffmpeg_failed', errorMessage: message, rawSummary: result.stderr || result.stdout, exitCode: result.exitCode, ffmpegPath: config.ffmpeg.path });
     throw new Error(message);
   }
 

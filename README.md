@@ -1,8 +1,8 @@
 # 抖音视频口播文案提取工具
 
-部署端口默认 `3001`。本工具保留三条稳定使用路径：
+部署端口默认 `3001`。本工具当前先收敛为三条使用路径：
 
-1. **直接粘抖音链接 / 短链 / 完整分享口令**：优先走第三方解析 API，失败后自动降级到 `yt-dlp + Cookie`，再尝试 Playwright 捕获视频资源。
+1. **直接粘抖音链接 / 短链 / 完整分享口令**：主流程只走第三方解析 API；API 返回可用 mp4 视频地址后下载并转写，不再兜底到 `yt-dlp` 或 Playwright。
 2. **上传视频/音频**：不依赖抖音链接，是当前最稳的兜底路径。
 3. **手动粘贴字幕/口播文本整理**：不依赖 ASR，适合已有字幕文本或人工粗稿。
 
@@ -23,6 +23,9 @@ ASR_API_KEY=sk-xxxx
 ASR_BASE_URL=https://api.openai.com/v1
 ASR_MODEL=gpt-4o-mini-transcribe
 
+FFMPEG_PATH=/usr/bin/ffmpeg
+FFPROBE_PATH=/usr/bin/ffprobe
+
 DOUYIN_COOKIES_FILE=/root/douyin-cookies.txt
 DOUYIN_USER_AGENT=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36
 DOUYIN_REFERER=https://www.douyin.com/
@@ -42,7 +45,8 @@ DOUYIN_RESOLVER_RESPONSE_VIDEO_FIELD=data.play_url
 - `OPENAI_*`：用于文本模型轻度纠错、断句，以及手动粘贴字幕整理。
 - `ASR_PROVIDER`：支持 `openai-compatible` 和 `disabled`。
 - `ASR_API_KEY` / `ASR_BASE_URL` / `ASR_MODEL`：用于 OpenAI 兼容 `/audio/transcriptions` 接口。未单独配置时会默认复用 `OPENAI_*`。
-- `DOUYIN_COOKIES_FILE`：yt-dlp 备用通道使用。Cookie 文件不要提交、不要截图、不要公开。
+- `FFMPEG_PATH` / `FFPROBE_PATH`：默认固定为 `/usr/bin/ffmpeg` 和 `/usr/bin/ffprobe`。
+- `DOUYIN_COOKIES_FILE`：当前主流程不再使用，仅保留历史配置兼容。Cookie 文件不要提交、不要截图、不要公开。
 - `DOUYIN_RESOLVER_*`：第三方抖音解析 API 通道使用。不要把解析 API Key 写进代码，不要提交 `.env`。
 
 ## 方式一：直接粘抖音链接（推荐配置第三方解析 API）
@@ -61,25 +65,18 @@ https://v.douyin.com/xxxx/
 4.64 01/22 dAg:/ E@h.bN 今天来学# 夏天的风... https://v.douyin.com/xxxx/ 复制此链接，打开Dou音搜索，直接观看视频！
 ```
 
-### 多通道解析顺序
+### 单条链接解析顺序
 
-1. **通道 A：第三方抖音解析 API（优先）**
+1. **第三方抖音解析 API（唯一主链路）**
    - 当 `DOUYIN_RESOLVER_PROVIDER=api` 且 `DOUYIN_RESOLVER_API_URL` 已配置时启用。
    - 支持 `GET` / `POST`。
    - 默认用 `url` 字段传抖音链接，可通过 `DOUYIN_RESOLVER_URL_FIELD` 修改。
    - 配置 `DOUYIN_RESOLVER_API_KEY` 后，会以 `Authorization: Bearer <key>` 和 `x-api-key: <key>` 发送给解析服务。
    - 如果配置 `DOUYIN_RESOLVER_RESPONSE_VIDEO_FIELD=data.play_url`，会按该字段读取视频直链。
    - 未配置返回字段时，会自动尝试：`video_url`、`videoUrl`、`play_url`、`playUrl`、`download_url`、`downloadUrl`、`url`、`data.video_url`、`data.play_url`、`data.url`。
-2. **通道 B：yt-dlp + DOUYIN_COOKIES_FILE（备用）**
-   - 如果 Cookie 文件存在，会自动附加 `--cookies /root/douyin-cookies.txt`。
-   - 同时会带 user-agent 和 referer。
-   - 如果仍遇到 `Fresh cookies are needed`，前端会显示中文提示，不会裸露英文报错。
-3. **通道 C：Playwright + Chromium（实验兜底）**
-   - 打开最终抖音页面。
-   - 监听 network 请求、读取页面标题/文本、尝试提取 `video` 标签 `src`。
-   - 如果捕获到视频资源 URL，会下载后进入 ASR；否则只写入诊断信息，不让页面崩溃。
-4. **通道 D：明确失败提示**
-   - 如果全部失败，页面提示：`当前链接无法由服务器直接解析，可能是抖音风控或解析接口未配置。请配置第三方解析 API，或下载视频后上传识别。`
+2. **明确失败提示**
+   - 如果解析 API 没有返回可用视频地址，页面提示：`解析 API 未返回可用视频地址，请检查解析 API 配置或更换解析服务`。
+   - 当前主流程不会继续兜底到 `yt-dlp` 或 Playwright，避免 Cookie 风控问题影响单条链接闭环。
 
 ## 方式二：上传视频/音频（当前最稳）
 
@@ -102,7 +99,7 @@ https://v.douyin.com/xxxx/
 - 支持批量粘贴多个链接或完整分享口令。
 - 支持上传 `txt` / `csv` / `xlsx` 自动读取链接。
 - 单条失败不会影响其他条。
-- 每条结果包含：视频链接、解析通道（`api` / `yt-dlp` / `playwright` / `failed` / `upload`）、识别状态、口播文案、错误原因。
+- 每条结果包含：视频链接、解析通道（`api` / `failed` / `upload`）、识别状态、口播文案、错误原因。
 - 支持一键复制单条口播文案。
 - 支持导出 UTF-8 BOM CSV。
 
@@ -110,12 +107,10 @@ https://v.douyin.com/xxxx/
 
 ```bash
 npm install
-python3 -m pip install -U yt-dlp
 apt install -y ffmpeg
-npx playwright install chromium
 ```
 
-Playwright 是实验兜底通道依赖；服务器需要安装 Playwright Chromium，否则 `/diagnostics` 会提示 Chromium 不可用，但 API 和 yt-dlp 通道仍可继续尝试。
+单条链接主流程不再依赖 yt-dlp / Playwright；只需确保 `/usr/bin/ffmpeg -version` 和 `/usr/bin/ffprobe -version` 正常。
 
 ## 服务器更新命令
 

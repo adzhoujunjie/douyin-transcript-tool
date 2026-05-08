@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { config } from './config.js';
-import { commandExists, runCommand } from './media.js';
+import { commandExists } from './media.js';
 import { runtimeState } from './runtime-state.js';
 
 const require = createRequire(import.meta.url);
@@ -40,10 +40,9 @@ async function playwrightStatus() {
 }
 
 export async function getDiagnostics() {
-  const [ffmpeg, ytdlp, ffmpegPath, cookiesFileExists, uploadsWritable, downloadsWritable, tmpWritable, playwright] = await Promise.all([
-    commandExists('ffmpeg'),
+  const [ffmpeg, ytdlp, cookiesFileExists, uploadsWritable, downloadsWritable, tmpWritable, playwright] = await Promise.all([
+    commandExists(config.ffmpeg.path, ['-version']),
     commandExists('yt-dlp'),
-    runCommand('which', ['ffmpeg'], { timeoutMs: 8000 }),
     fileExists(config.douyin.cookiesFile),
     writableDir('uploads'),
     writableDir('downloads'),
@@ -55,7 +54,8 @@ export async function getDiagnostics() {
     service: { ok: true, timestamp: new Date().toISOString(), port: config.port },
     dependencies: {
       ffmpegInstalled: ffmpeg.installed,
-      ffmpegPath: ffmpegPath.exitCode === 0 ? ffmpegPath.stdout.trim() : '',
+      ffmpegPath: config.ffmpeg.path,
+      ffprobePath: config.ffmpeg.ffprobePath,
       ytDlpInstalled: ytdlp.installed,
       ytDlpVersion: ytdlp.version,
       playwrightInstalled: playwright.installed,

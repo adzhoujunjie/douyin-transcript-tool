@@ -4,20 +4,14 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { pipeline } from 'node:stream/promises';
 import { Readable } from 'node:stream';
-import { createRequire } from 'node:module';
 import { config } from './config.js';
 import { extractDouyinLinks, isShortLink, normalizeUrl, resolveDouyinUrl } from './link-utils.js';
-import { classifyYtDlpError, runYtDlpDownload } from './media.js';
 import { logStep, summarizeError } from './logger.js';
-import { rememberDownloadError, rememberLinkResolve } from './runtime-state.js';
-
-const require = createRequire(import.meta.url);
+import { rememberLinkResolve } from './runtime-state.js';
 
 const DOWNLOAD_DIR = path.resolve('tmp/downloads');
-const FALLBACK_FAILED_MESSAGE = '当前链接无法由服务器直接解析，可能是抖音风控或解析接口未配置。请配置第三方解析 API，或下载视频后上传识别。';
-const FRESH_COOKIE_MESSAGE = '服务器直读抖音链接被拒绝，可能是抖音风控或 yt-dlp 解析失效。系统已尝试备用方案，如仍失败请改用上传视频识别，或配置第三方解析 API。';
+const API_NO_VIDEO_MESSAGE = '解析 API 未返回可用视频地址，请检查解析 API 配置或更换解析服务';
 const AUTO_VIDEO_FIELDS = ['video_url', 'videoUrl', 'play_url', 'playUrl', 'download_url', 'downloadUrl', 'url', 'data.video_url', 'data.play_url', 'data.url'];
-const VIDEO_RESOURCE_REGEX = /(?:mime_type=video|mime_type=video_mp4|\.mp4(?:\?|$)|playwm|playurl|video_id|aweme|douyinpic|bytecdn|ixigua|snssdk)/i;
 const CONTENT_TYPE_EXT = new Map([
   ['video/mp4', '.mp4'],
   ['audio/mpeg', '.mp3'],
@@ -145,7 +139,7 @@ async function tryApiResolver(finalUrl, diagnostics) {
     try { data = JSON.parse(text); } catch { data = text; }
     if (!response.ok) throw new Error(`HTTP ${response.status}: ${summarizeError(text)}`);
     const videoUrl = extractVideoUrlFromResponse(data);
-    if (!videoUrl) throw new Error('解析接口未返回可用的视频下载地址');
+    if (!videoUrl) throw new Error(API_NO_VIDEO_MESSAGE);
     const filePath = await downloadVideoUrl(videoUrl, 'api');
     diagnostics.api = createAttemptDiagnostics('api', true, '第三方解析 API 成功返回视频地址');
     return { channel: 'api', filePath, videoUrl };
@@ -159,93 +153,14 @@ async function tryApiResolver(finalUrl, diagnostics) {
   }
 }
 
-async function findDownloadedFile(outputTemplate) {
-  const prefix = outputTemplate.replace('%(ext)s', '');
-  const dir = path.dirname(outputTemplate);
-  const files = await fs.readdir(dir);
-  const downloaded = files.find((file) => path.join(dir, file).startsWith(prefix));
-  return downloaded ? path.join(dir, downloaded) : '';
-}
-
-async function tryYtDlp(finalUrl, diagnostics) {
-  const result = await runYtDlpDownload(finalUrl);
-  if (result.exitCode !== 0) {
-    const raw = result.stderr || result.stdout || `命令退出码 ${result.exitCode}`;
-    const classified = classifyYtDlpError(raw);
-    const userMessage = classified.type === 'douyin_cookie_required' ? FRESH_COOKIE_MESSAGE : classified.userMessage;
-    diagnostics.ytdlp = createAttemptDiagnostics('yt-dlp', false, `${userMessage} | ${summarizeError(raw)}`);
-    rememberDownloadError({ errorType: classified.type, errorMessage: userMessage, rawSummary: summarizeError(raw), exitCode: result.exitCode });
-    logStep('yt-dlp 备用通道失败', 'fail', { errorType: classified.type, errorMessage: userMessage, rawSummary: raw, exitCode: result.exitCode, usedCookiesFile: result.usedCookiesFile });
-    return null;
-  }
-
-  const filePath = await findDownloadedFile(result.outputTemplate);
-  if (!filePath) {
-    const message = '视频下载失败：未找到下载后的视频文件，当前视频可能需要登录或不可访问。';
-    diagnostics.ytdlp = createAttemptDiagnostics('yt-dlp', false, message);
-    logStep('yt-dlp 备用通道失败', 'fail', { errorType: 'download_output_missing', errorMessage: message });
-    return null;
-  }
-  diagnostics.ytdlp = createAttemptDiagnostics('yt-dlp', true, 'yt-dlp 下载成功');
-  logStep('yt-dlp 备用通道成功', 'success', { usedCookiesFile: result.usedCookiesFile, fileExt: path.extname(filePath) });
-  return { channel: 'yt-dlp', filePath };
-}
-
-async function tryPlaywright(finalUrl, diagnostics) {
-  let chromium;
-  try {
-    ({ chromium } = require('playwright'));
-  } catch (error) {
-    diagnostics.playwright = createAttemptDiagnostics('playwright', false, 'Playwright 未安装');
-    logStep('Playwright 兜底不可用', 'fail', { errorType: 'playwright_not_installed', errorMessage: error.message });
-    return null;
-  }
-
-  let browser;
-  const captured = new Set();
-  const pageInfo = {};
-  try {
-    browser = await chromium.launch({ headless: true });
-    const page = await browser.newPage({ userAgent: config.douyin.userAgent });
-    page.on('request', (request) => {
-      const url = request.url();
-      if (VIDEO_RESOURCE_REGEX.test(url)) captured.add(url);
-    });
-    page.on('response', (response) => {
-      const url = response.url();
-      const type = response.headers()['content-type'] || '';
-      if (/video|octet-stream/i.test(type) || VIDEO_RESOURCE_REGEX.test(url)) captured.add(url);
-    });
-    logStep('Playwright 兜底开始', 'start', { url: finalUrl });
-    await page.goto(finalUrl, { waitUntil: 'domcontentloaded', timeout: 45_000 });
-    await page.waitForTimeout(6000);
-    pageInfo.title = await page.title().catch(() => '');
-    pageInfo.textSummary = summarizeError(await page.locator('body').innerText({ timeout: 3000 }).catch(() => ''));
-    const videoSrcs = await page.locator('video').evaluateAll((videos) => videos.map((video) => video.currentSrc || video.src).filter(Boolean)).catch(() => []);
-    for (const src of videoSrcs) captured.add(src);
-
-    const videoUrl = [...captured].find((url) => /^https?:\/\//i.test(url) && !/\.js(?:\?|$)|\.css(?:\?|$)|\.png(?:\?|$)|\.jpg(?:\?|$)/i.test(url));
-    if (!videoUrl) throw new Error(`未捕获到可下载视频资源。页面标题：${pageInfo.title || '空'}`);
-    const filePath = await downloadVideoUrl(videoUrl, 'playwright');
-    diagnostics.playwright = createAttemptDiagnostics('playwright', true, `捕获视频资源成功；页面标题：${pageInfo.title || '空'}`);
-    return { channel: 'playwright', filePath, videoUrl, pageInfo };
-  } catch (error) {
-    diagnostics.playwright = createAttemptDiagnostics('playwright', false, `${error.message}; 页面诊断：${JSON.stringify(pageInfo)}`);
-    logStep('Playwright 兜底失败', 'fail', { errorType: 'playwright_resolver_failed', errorMessage: error.message, pageInfo });
-    return null;
-  } finally {
-    await browser?.close().catch(() => {});
-  }
-}
-
 export async function resolveDouyinVideo(inputText) {
   const diagnostics = {
     inputText: summarizeError(inputText),
     extractedUrl: '',
     finalUrl: '',
     api: createAttemptDiagnostics('api'),
-    ytdlp: createAttemptDiagnostics('yt-dlp'),
-    playwright: createAttemptDiagnostics('playwright'),
+    ytdlp: createAttemptDiagnostics('yt-dlp', false, '主流程已禁用'),
+    playwright: createAttemptDiagnostics('playwright', false, '主流程已禁用'),
     finalFailureReason: ''
   };
 
@@ -266,26 +181,14 @@ export async function resolveDouyinVideo(inputText) {
       return { ...apiResult, originalUrl: extractedUrl, finalUrl: resolved.finalUrl, diagnostics };
     }
 
-    const ytdlpResult = await tryYtDlp(resolved.finalUrl, diagnostics);
-    if (ytdlpResult) {
-      rememberLinkResolve({ ...diagnostics, apiSuccess: false, ytdlpSuccess: true, playwrightSuccess: false, finalFailureReason: '' });
-      return { ...ytdlpResult, originalUrl: extractedUrl, finalUrl: resolved.finalUrl, diagnostics };
-    }
-
-    const playwrightResult = await tryPlaywright(resolved.finalUrl, diagnostics);
-    if (playwrightResult) {
-      rememberLinkResolve({ ...diagnostics, apiSuccess: false, ytdlpSuccess: false, playwrightSuccess: true, finalFailureReason: '' });
-      return { ...playwrightResult, originalUrl: extractedUrl, finalUrl: resolved.finalUrl, diagnostics };
-    }
-
-    diagnostics.finalFailureReason = FALLBACK_FAILED_MESSAGE;
+    diagnostics.finalFailureReason = API_NO_VIDEO_MESSAGE;
     rememberLinkResolve({ ...diagnostics, apiSuccess: false, ytdlpSuccess: false, playwrightSuccess: false });
-    const error = new Error(FALLBACK_FAILED_MESSAGE);
+    const error = new Error(API_NO_VIDEO_MESSAGE);
     error.channel = 'failed';
     error.diagnostics = diagnostics;
     throw error;
   } catch (error) {
-    if (!diagnostics.finalFailureReason) diagnostics.finalFailureReason = error.message || FALLBACK_FAILED_MESSAGE;
+    if (!diagnostics.finalFailureReason) diagnostics.finalFailureReason = error.message || API_NO_VIDEO_MESSAGE;
     rememberLinkResolve({ ...diagnostics, apiSuccess: diagnostics.api.success, ytdlpSuccess: diagnostics.ytdlp.success, playwrightSuccess: diagnostics.playwright.success });
     logStep('统一抖音解析失败', 'fail', { errorType: 'douyin_resolve_failed', errorMessage: diagnostics.finalFailureReason, diagnostics });
     error.channel = error.channel || 'failed';
